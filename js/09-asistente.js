@@ -3,13 +3,20 @@
    Archivo: js/09-asistente.js
    =================================================================== */
 
-/* =====================================================================
-   ASISTENTE, COPIAS Y CUENTAS DE ADMINISTRADOR
-   ===================================================================== */
+/* 🔥 CONTROL DE GUARDADO (ANTI LAG) */
+let BLOQUEO_GUARDAR = false;
 
-/* ---------------------------------------------------------------------
-   1) EL ADMINISTRADOR PUEDE CREAR CUENTAS
-   --------------------------------------------------------------------- */
+function guardarSeguro() {
+  if (BLOQUEO_GUARDAR) return;
+
+  BLOQUEO_GUARDAR = true;
+
+  guardar();
+
+  setTimeout(() => {
+    BLOQUEO_GUARDAR = false;
+  }, 3000);
+}
 async function crearCuentaAdmin() {
   const yoSoy = yo();
   if (!yoSoy || yoSoy.rol !== 'admin') return;
@@ -58,8 +65,7 @@ async function crearCuentaAdmin() {
   anotarEvento('alta', `${yoSoy.nombre} creó la cuenta de ${u.nombre}`, yoSoy.id);
   notificar(u.id, '¡Bienvenido a ' + BD.config.nombre + '!',
             'El administrador te creó la cuenta. Tu código de respaldo es ' + u.codigo + '.');
-  guardar();
-
+guardarSeguro();
   $('#formNuevoUsuario').reset();
   $('#resultadoNuevo').innerHTML = `
     <div class="ficha-nueva">
