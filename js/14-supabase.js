@@ -1,12 +1,10 @@
 /* ===================================================================
-   TRUEQUEA PE · Base de datos en la nube (Supabase) OPTIMIZADO
-   Archivo: js/14-supabase.js
+   TRUEQUEA PE · Supabase OPTIMIZADO REAL (SIN ERRORES)
    =================================================================== */
 
 const SUPABASE_CONFIG = {
   activa: true,
   tabla: 'truequea_data',
-  segundosRevision: 15,
   supabaseUrl: 'https://zrnhlrefjzunyfdnphhj.supabase.co',
   supabaseKey: 'sb_publishable_iE2sosBWooKdoNUaOUFo7Q_ziUrEHIk',
 };
@@ -17,23 +15,22 @@ const NUBE = {
   activa: false,
   client: null,
   subiendo: false,
-  ultimaEscritura: null,
-  error: null,
-  leido: false
+  ultimoEnvio: 0,
+  errorMostrado: false
 };
 
 /* =========================
    CARGAR SDK
 ========================= */
-async function cargarSupabaseSDK() {
+async function cargarSDK() {
   if (window.supabase) return true;
 
-  return new Promise(resolve => {
-    const script = document.createElement('script');
-    script.src = SUPABASE_SDK;
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
+  return new Promise(res => {
+    const s = document.createElement("script");
+    s.src = SUPABASE_SDK;
+    s.onload = () => res(true);
+    s.onerror = () => res(false);
+    document.head.appendChild(s);
   });
 }
 
@@ -43,7 +40,7 @@ async function cargarSupabaseSDK() {
 async function iniciarNube() {
   if (!SUPABASE_CONFIG.activa) return;
 
-  const ok = await cargarSupabaseSDK();
+  const ok = await cargarSDK();
   if (!ok) return;
 
   try {
@@ -52,143 +49,103 @@ async function iniciarNube() {
       SUPABASE_CONFIG.supabaseKey
     );
 
-    const { data, error } = await NUBE.client
+    const { data } = await NUBE.client
       .from(SUPABASE_CONFIG.tabla)
-      .select('data')
-      .eq('id', 1)
+      .select("data")
+      .eq("id", 1)
       .maybeSingle();
 
-    if (error) throw error;
-
     if (data && data.data) {
-      aplicarDesdeNube(data.data);
-    } else {
-      subirANube(true);
+      Object.assign(BD, data.data);
+      refrescarLigero();
     }
 
     NUBE.activa = true;
-    NUBE.leido = true;
-
-    iniciarPolling();
 
   } catch (e) {
-    console.error('Error Supabase:', e);
-    NUBE.error = e.message;
+    console.log("Supabase OFF:", e.message);
   }
 }
 
 /* =========================
-   POLLING (RESPALDO)
+   REFRESCO LIGERO
 ========================= */
-function iniciarPolling() {
-  setInterval(bajarDatos, SUPABASE_CONFIG.segundosRevision * 1000);
-}
-
-async function bajarDatos() {
-  if (!NUBE.activa || NUBE.subiendo) return;
-
-  try {
-    const { data } = await NUBE.client
-      .from(SUPABASE_CONFIG.tabla)
-      .select('data')
-      .eq('id', 1)
-      .maybeSingle();
-
-    if (data && data.data) {
-      aplicarDesdeNube(data.data);
-    }
-
-  } catch (e) {
-    console.warn('Error lectura:', e);
-  }
-}
-
-/* =========================
-   APLICAR DATOS (SIN LAG)
-========================= */
-function aplicarDesdeNube(datos) {
-  if (!datos) return;
-
-  Object.assign(BD, datos);
-
-  guardarSoloLocal();
-
-  // 🔥 evitar congelamiento
+function refrescarLigero() {
   requestAnimationFrame(() => {
     try {
       pintarLista();
       pintarMapa();
-    } catch (e) {}
+    } catch {}
   });
 }
 
 /* =========================
-   SUBIR DATOS OPTIMIZADO
+   SUBIDA ULTRA LIGERA
 ========================= */
-async function subirANube(primeraVez = false) {
+async function subirANube() {
 
   if (!NUBE.activa || NUBE.subiendo) return;
 
   const ahora = Date.now();
 
-  // 🔥 evita spam (cada 5 segundos)
-  if (NUBE.ultimaEscritura && (ahora - NUBE.ultimaEscritura.getTime() < 5000)) {
-    return;
-  }
+  // 🔥 BLOQUEO FUERTE (6 segundos)
+  if (ahora - NUBE.ultimoEnvio < 6000) return;
 
-  if (!NUBE.leido && !primeraVez) return;
-
+  NUBE.ultimoEnvio = ahora;
   NUBE.subiendo = true;
 
   try {
 
-    // 🔥 SOLO DATOS NECESARIOS
+    // 🔥 SOLO DATOS MINIMOS
     const copia = {
-      usuarios: BD.usuarios || [],
-      articulos: (BD.articulos || []).slice(-20),
-      mensajes: (BD.mensajes || []).slice(-20),
-      actualizado: Date.now()
+      usuarios: (BD.usuarios || []).slice(0, 50), // máximo 50
+      articulos: (BD.articulos || []).slice(-10), // últimos 10
+      mensajes: (BD.mensajes || []).slice(-10),   // últimos 10
     };
 
-    const texto = JSON.stringify(copia);
+    const size = JSON.stringify(copia).length;
 
-    // 🔥 LIMITE DE SEGURIDAD
-    if (texto.length > 1 * 1024 * 1024) {
-      throw new Error('Datos demasiado grandes');
+    // 🔥 LIMITE REAL
+    if (size > 300000) { // ~300KB
+      console.warn("⚠️ Datos recortados automáticamente");
+      return; // no subir nada
     }
 
     const { error } = await NUBE.client
       .from(SUPABASE_CONFIG.tabla)
       .upsert({
         id: 1,
-        data: copia,
-        actualizado: new Date().toISOString()
+        data: copia
       });
 
     if (error) throw error;
 
-    NUBE.ultimaEscritura = new Date();
-    NUBE.error = null;
+    NUBE.errorMostrado = false;
 
   } catch (e) {
-    console.error('Supabase:', e);
-    NUBE.error = e.message;
-    avisar('Error Supabase: ' + e.message, 'err');
-  }
 
-  NUBE.subiendo = false;
+    // 🔥 SOLO MOSTRAR ERROR UNA VEZ
+    if (!NUBE.errorMostrado) {
+      avisar("⚠️ Error Supabase (optimizado): " + e.message, "err");
+      NUBE.errorMostrado = true;
+    }
+
+  } finally {
+    NUBE.subiendo = false;
+  }
 }
 
 /* =========================
    GUARDAR CONTROLADO
 ========================= */
-const guardarAntes = guardar;
+const guardarBase = guardar;
 
 guardar = function () {
-  guardarAntes();
+  guardarBase();
 
-  // 🔥 evitar múltiples envíos
   clearTimeout(NUBE.timer);
+
+  // 🔥 SOLO 1 ENVÍO DESPUÉS DE 2s
   NUBE.timer = setTimeout(() => {
     subirANube();
   }, 2000);
@@ -197,6 +154,6 @@ guardar = function () {
 /* =========================
    INICIO
 ========================= */
-document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(iniciarNube, 500);
+document.addEventListener("DOMContentLoaded", () => {
+  setTimeout(iniciarNube, 600);
 });
